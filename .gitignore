@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 
 # Created by https://www.gitignore.io/api/c++
 
@@ -5,6 +6,8 @@
 # Prerequisites
 *.d
 
+=======
+>>>>>>> ce8ec651a2a51f033fa8792b1528a179c59e988f
 # Compiled Object files
 *.slo
 *.lo
@@ -34,9 +37,12 @@
 *.exe
 *.out
 *.app
+<<<<<<< HEAD
 
 # End of https://www.gitignore.io/api/c++
 
 #omnet log
 *.cmdenv-log
 *.tkenvlog
+=======
+>>>>>>> ce8ec651a2a51f033fa8792b1528a179c59e988f
