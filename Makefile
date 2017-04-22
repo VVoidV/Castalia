@@ -1,12 +1,12 @@
 #
-# OMNeT++/OMNEST Makefile for mywork
+# OMNeT++/OMNEST Makefile for Castalia
 #
 # This file was generated with the command:
 #  opp_makemake -f --deep -O out
 #
 
 # Name of target to be created (-o option)
-TARGET = mywork$(EXE_SUFFIX)
+TARGET = Castalia$(EXE_SUFFIX)
 
 # User interface (uncomment one) (-u option)
 USERIF_LIBS = $(ALL_ENV_LIBS) # that is, $(TKENV_LIBS) $(QTENV_LIBS) $(CMDENV_LIBS)
@@ -229,7 +229,7 @@ smheaders: $(SMFILES:.sm=_sm.h)
 clean:
 	$(qecho) Cleaning...
 	$(Q)-rm -rf $O
-	$(Q)-rm -f mywork mywork.exe libmywork.so libmywork.a libmywork.dll libmywork.dylib
+	$(Q)-rm -f Castalia Castalia.exe libCastalia.so libCastalia.a libCastalia.dll libCastalia.dylib
 	$(Q)-rm -f ./*_m.cc ./*_m.h ./*_sm.cc ./*_sm.h
 	$(Q)-rm -f Simulations/*_m.cc Simulations/*_m.h Simulations/*_sm.cc Simulations/*_sm.h
 	$(Q)-rm -f Simulations/BANtest/*_m.cc Simulations/BANtest/*_m.h Simulations/BANtest/*_sm.cc Simulations/BANtest/*_sm.h
@@ -509,6 +509,9 @@ $O/src/node/communication/mac/tMac/TMAC.o: src/node/communication/mac/tMac/TMAC.
 	src/helpStructures/DebugInfoWriter.h \
 	src/helpStructures/TimerService.h \
 	src/helpStructures/TimerServiceMessage_m.h \
+	src/node/application/ApplicationPacket_m.h \
+	src/node/application/VirtualApplication.h \
+	src/node/application/throughputTest/ThroughputTest.h \
 	src/node/communication/mac/MacPacket_m.h \
 	src/node/communication/mac/VirtualMac.h \
 	src/node/communication/mac/tMac/TMAC.h \
@@ -517,8 +520,10 @@ $O/src/node/communication/mac/tMac/TMAC.o: src/node/communication/mac/tMac/TMAC.
 	src/node/communication/radio/RadioControlMessage_m.h \
 	src/node/communication/radio/RadioSupportFunctions.h \
 	src/node/communication/routing/RoutingPacket_m.h \
+	src/node/mobilityManager/VirtualMobilityManager.h \
 	src/node/resourceManager/ResourceManager.h \
 	src/node/resourceManager/ResourceManagerMessage_m.h \
+	src/node/sensorManager/SensorManagerMessage_m.h \
 	src/wirelessChannel/WirelessChannelMessages_m.h
 $O/src/node/communication/mac/tMac/TMacPacket_m.o: src/node/communication/mac/tMac/TMacPacket_m.cc \
 	src/node/communication/mac/MacPacket_m.h \

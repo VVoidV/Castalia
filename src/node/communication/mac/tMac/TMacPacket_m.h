@@ -17,32 +17,31 @@
 
 // cplusplus {{
 #include "MacPacket_m.h"
+#include <vector>
 // }}
 
 /**
- * Enum generated from <tt>src/node/communication/mac/tMac/TMacPacket.msg:19</tt> by nedtool.
+ * Enum generated from <tt>src/node/communication/mac/tMac/TMacPacket.msg:20</tt> by nedtool.
  * <pre>
  * enum TmacPacket_type
  * {
  * 
- *     SYNC_TMAC_PACKET = 1;
- *     RTS_TMAC_PACKET = 2;
- *     CTS_TMAC_PACKET = 3;
- *     DS_TMAC_PACKET = 4;
- *     FRTS_TMAC_PACKET = 5;
+ *     BEACON_TMAC_PACKET = 1;
+ *     ACK_TMAC_PACKET = 2;
+ *     GACK_TMAC_PACKET = 3;
+ *     OACK_TMAC_PACKET = 4;
+ *     SACK_TMAC_PACKET = 5;
  *     DATA_TMAC_PACKET = 6;
- *     ACK_TMAC_PACKET = 7;
  * }
  * </pre>
  */
 enum TmacPacket_type {
-    SYNC_TMAC_PACKET = 1,
-    RTS_TMAC_PACKET = 2,
-    CTS_TMAC_PACKET = 3,
-    DS_TMAC_PACKET = 4,
-    FRTS_TMAC_PACKET = 5,
-    DATA_TMAC_PACKET = 6,
-    ACK_TMAC_PACKET = 7
+    BEACON_TMAC_PACKET = 1,
+    ACK_TMAC_PACKET = 2,
+    GACK_TMAC_PACKET = 3,
+    OACK_TMAC_PACKET = 4,
+    SACK_TMAC_PACKET = 5,
+    DATA_TMAC_PACKET = 6
 };
 
 /**
@@ -54,22 +53,13 @@ enum TmacPacket_type {
  *     // size including source and destination field (found 
  *     // in the generic MacPAcket) is 9 bytes in total
  *     int type @enum(TmacPacket_type);	// 1 byte
- * 
- *     // RTS and CTS frames also contain nav field, bringing their size to 13 bytes
- *     simtime_t nav = 0;					// 4 bytes
- * 
- * 	// Sequence number is essential for ACK and DATA frames, but they do not 
- * 	// contain NAV field, therefore the size of ACK packet and MAC 
- * 	// layer overhead in general is 11 bytes. We use the field in the
- * 	// generic MacPacket and count it as 2 bytes.
- * 
- *     // SYNC packet has only three fields: sequence number, sync value and sync ID, 
- *     // making its total size only 11 bytes (1 extra byte comes from packet type) 
- *     // In reality, SYNC id would probably be stored in source field and sync 
- *     // value in NAV field. But in this model we do not create a separate packet 
- *     // subclass for each packet type
- *     simtime_t sync = 0;					// 4 bytes
- *     int syncId = 0;						// 4 bytes
+ *     //ACK
+ *     int bufferSize;
+ *     //G-ACK which node's ack had been receieved
+ *     bool ackedNode[];
+ *     //O-ACK 
+ *     int transferOrder[];
+ *     int O_ACK_bufferSize[];
  * }
  * </pre>
  */
@@ -77,9 +67,13 @@ class TMacPacket : public ::MacPacket
 {
   protected:
     int type;
-    ::omnetpp::simtime_t nav;
-    ::omnetpp::simtime_t sync;
-    int syncId;
+    int bufferSize;
+    bool *ackedNode; // array ptr
+    unsigned int ackedNode_arraysize;
+    int *transferOrder; // array ptr
+    unsigned int transferOrder_arraysize;
+    int *O_ACK_bufferSize; // array ptr
+    unsigned int O_ACK_bufferSize_arraysize;
 
   private:
     void copy(const TMacPacket& other);
@@ -100,12 +94,20 @@ class TMacPacket : public ::MacPacket
     // field getter/setter methods
     virtual int getType() const;
     virtual void setType(int type);
-    virtual ::omnetpp::simtime_t getNav() const;
-    virtual void setNav(::omnetpp::simtime_t nav);
-    virtual ::omnetpp::simtime_t getSync() const;
-    virtual void setSync(::omnetpp::simtime_t sync);
-    virtual int getSyncId() const;
-    virtual void setSyncId(int syncId);
+    virtual int getBufferSize() const;
+    virtual void setBufferSize(int bufferSize);
+    virtual void setAckedNodeArraySize(unsigned int size);
+    virtual unsigned int getAckedNodeArraySize() const;
+    virtual bool getAckedNode(unsigned int k) const;
+    virtual void setAckedNode(unsigned int k, bool ackedNode);
+    virtual void setTransferOrderArraySize(unsigned int size);
+    virtual unsigned int getTransferOrderArraySize() const;
+    virtual int getTransferOrder(unsigned int k) const;
+    virtual void setTransferOrder(unsigned int k, int transferOrder);
+    virtual void setO_ACK_bufferSizeArraySize(unsigned int size);
+    virtual unsigned int getO_ACK_bufferSizeArraySize() const;
+    virtual int getO_ACK_bufferSize(unsigned int k) const;
+    virtual void setO_ACK_bufferSize(unsigned int k, int O_ACK_bufferSize);
 };
 
 inline void doParsimPacking(omnetpp::cCommBuffer *b, const TMacPacket& obj) {obj.parsimPack(b);}

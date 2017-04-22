@@ -164,13 +164,12 @@ inline std::ostream& operator<<(std::ostream& out, const std::vector<T,A>& vec)
 EXECUTE_ON_STARTUP(
     omnetpp::cEnum *e = omnetpp::cEnum::find("TmacPacket_type");
     if (!e) omnetpp::enums.getInstance()->add(e = new omnetpp::cEnum("TmacPacket_type"));
-    e->insert(SYNC_TMAC_PACKET, "SYNC_TMAC_PACKET");
-    e->insert(RTS_TMAC_PACKET, "RTS_TMAC_PACKET");
-    e->insert(CTS_TMAC_PACKET, "CTS_TMAC_PACKET");
-    e->insert(DS_TMAC_PACKET, "DS_TMAC_PACKET");
-    e->insert(FRTS_TMAC_PACKET, "FRTS_TMAC_PACKET");
-    e->insert(DATA_TMAC_PACKET, "DATA_TMAC_PACKET");
+    e->insert(BEACON_TMAC_PACKET, "BEACON_TMAC_PACKET");
     e->insert(ACK_TMAC_PACKET, "ACK_TMAC_PACKET");
+    e->insert(GACK_TMAC_PACKET, "GACK_TMAC_PACKET");
+    e->insert(OACK_TMAC_PACKET, "OACK_TMAC_PACKET");
+    e->insert(SACK_TMAC_PACKET, "SACK_TMAC_PACKET");
+    e->insert(DATA_TMAC_PACKET, "DATA_TMAC_PACKET");
 );
 
 Register_Class(TMacPacket);
@@ -178,18 +177,31 @@ Register_Class(TMacPacket);
 TMacPacket::TMacPacket(const char *name, int kind) : ::MacPacket(name,kind)
 {
     this->type = 0;
-    this->nav = 0;
-    this->sync = 0;
-    this->syncId = 0;
+    this->bufferSize = 0;
+    ackedNode_arraysize = 0;
+    this->ackedNode = 0;
+    transferOrder_arraysize = 0;
+    this->transferOrder = 0;
+    O_ACK_bufferSize_arraysize = 0;
+    this->O_ACK_bufferSize = 0;
 }
 
 TMacPacket::TMacPacket(const TMacPacket& other) : ::MacPacket(other)
 {
+    ackedNode_arraysize = 0;
+    this->ackedNode = 0;
+    transferOrder_arraysize = 0;
+    this->transferOrder = 0;
+    O_ACK_bufferSize_arraysize = 0;
+    this->O_ACK_bufferSize = 0;
     copy(other);
 }
 
 TMacPacket::~TMacPacket()
 {
+    delete [] this->ackedNode;
+    delete [] this->transferOrder;
+    delete [] this->O_ACK_bufferSize;
 }
 
 TMacPacket& TMacPacket::operator=(const TMacPacket& other)
@@ -203,27 +215,66 @@ TMacPacket& TMacPacket::operator=(const TMacPacket& other)
 void TMacPacket::copy(const TMacPacket& other)
 {
     this->type = other.type;
-    this->nav = other.nav;
-    this->sync = other.sync;
-    this->syncId = other.syncId;
+    this->bufferSize = other.bufferSize;
+    delete [] this->ackedNode;
+    this->ackedNode = (other.ackedNode_arraysize==0) ? nullptr : new bool[other.ackedNode_arraysize];
+    ackedNode_arraysize = other.ackedNode_arraysize;
+    for (unsigned int i=0; i<ackedNode_arraysize; i++)
+        this->ackedNode[i] = other.ackedNode[i];
+    delete [] this->transferOrder;
+    this->transferOrder = (other.transferOrder_arraysize==0) ? nullptr : new int[other.transferOrder_arraysize];
+    transferOrder_arraysize = other.transferOrder_arraysize;
+    for (unsigned int i=0; i<transferOrder_arraysize; i++)
+        this->transferOrder[i] = other.transferOrder[i];
+    delete [] this->O_ACK_bufferSize;
+    this->O_ACK_bufferSize = (other.O_ACK_bufferSize_arraysize==0) ? nullptr : new int[other.O_ACK_bufferSize_arraysize];
+    O_ACK_bufferSize_arraysize = other.O_ACK_bufferSize_arraysize;
+    for (unsigned int i=0; i<O_ACK_bufferSize_arraysize; i++)
+        this->O_ACK_bufferSize[i] = other.O_ACK_bufferSize[i];
 }
 
 void TMacPacket::parsimPack(omnetpp::cCommBuffer *b) const
 {
     ::MacPacket::parsimPack(b);
     doParsimPacking(b,this->type);
-    doParsimPacking(b,this->nav);
-    doParsimPacking(b,this->sync);
-    doParsimPacking(b,this->syncId);
+    doParsimPacking(b,this->bufferSize);
+    b->pack(ackedNode_arraysize);
+    doParsimArrayPacking(b,this->ackedNode,ackedNode_arraysize);
+    b->pack(transferOrder_arraysize);
+    doParsimArrayPacking(b,this->transferOrder,transferOrder_arraysize);
+    b->pack(O_ACK_bufferSize_arraysize);
+    doParsimArrayPacking(b,this->O_ACK_bufferSize,O_ACK_bufferSize_arraysize);
 }
 
 void TMacPacket::parsimUnpack(omnetpp::cCommBuffer *b)
 {
     ::MacPacket::parsimUnpack(b);
     doParsimUnpacking(b,this->type);
-    doParsimUnpacking(b,this->nav);
-    doParsimUnpacking(b,this->sync);
-    doParsimUnpacking(b,this->syncId);
+    doParsimUnpacking(b,this->bufferSize);
+    delete [] this->ackedNode;
+    b->unpack(ackedNode_arraysize);
+    if (ackedNode_arraysize==0) {
+        this->ackedNode = 0;
+    } else {
+        this->ackedNode = new bool[ackedNode_arraysize];
+        doParsimArrayUnpacking(b,this->ackedNode,ackedNode_arraysize);
+    }
+    delete [] this->transferOrder;
+    b->unpack(transferOrder_arraysize);
+    if (transferOrder_arraysize==0) {
+        this->transferOrder = 0;
+    } else {
+        this->transferOrder = new int[transferOrder_arraysize];
+        doParsimArrayUnpacking(b,this->transferOrder,transferOrder_arraysize);
+    }
+    delete [] this->O_ACK_bufferSize;
+    b->unpack(O_ACK_bufferSize_arraysize);
+    if (O_ACK_bufferSize_arraysize==0) {
+        this->O_ACK_bufferSize = 0;
+    } else {
+        this->O_ACK_bufferSize = new int[O_ACK_bufferSize_arraysize];
+        doParsimArrayUnpacking(b,this->O_ACK_bufferSize,O_ACK_bufferSize_arraysize);
+    }
 }
 
 int TMacPacket::getType() const
@@ -236,34 +287,104 @@ void TMacPacket::setType(int type)
     this->type = type;
 }
 
-::omnetpp::simtime_t TMacPacket::getNav() const
+int TMacPacket::getBufferSize() const
 {
-    return this->nav;
+    return this->bufferSize;
 }
 
-void TMacPacket::setNav(::omnetpp::simtime_t nav)
+void TMacPacket::setBufferSize(int bufferSize)
 {
-    this->nav = nav;
+    this->bufferSize = bufferSize;
 }
 
-::omnetpp::simtime_t TMacPacket::getSync() const
+void TMacPacket::setAckedNodeArraySize(unsigned int size)
 {
-    return this->sync;
+    bool *ackedNode2 = (size==0) ? nullptr : new bool[size];
+    unsigned int sz = ackedNode_arraysize < size ? ackedNode_arraysize : size;
+    for (unsigned int i=0; i<sz; i++)
+        ackedNode2[i] = this->ackedNode[i];
+    for (unsigned int i=sz; i<size; i++)
+        ackedNode2[i] = 0;
+    ackedNode_arraysize = size;
+    delete [] this->ackedNode;
+    this->ackedNode = ackedNode2;
 }
 
-void TMacPacket::setSync(::omnetpp::simtime_t sync)
+unsigned int TMacPacket::getAckedNodeArraySize() const
 {
-    this->sync = sync;
+    return ackedNode_arraysize;
 }
 
-int TMacPacket::getSyncId() const
+bool TMacPacket::getAckedNode(unsigned int k) const
 {
-    return this->syncId;
+    if (k>=ackedNode_arraysize) throw omnetpp::cRuntimeError("Array of size %d indexed by %d", ackedNode_arraysize, k);
+    return this->ackedNode[k];
 }
 
-void TMacPacket::setSyncId(int syncId)
+void TMacPacket::setAckedNode(unsigned int k, bool ackedNode)
 {
-    this->syncId = syncId;
+    if (k>=ackedNode_arraysize) throw omnetpp::cRuntimeError("Array of size %d indexed by %d", ackedNode_arraysize, k);
+    this->ackedNode[k] = ackedNode;
+}
+
+void TMacPacket::setTransferOrderArraySize(unsigned int size)
+{
+    int *transferOrder2 = (size==0) ? nullptr : new int[size];
+    unsigned int sz = transferOrder_arraysize < size ? transferOrder_arraysize : size;
+    for (unsigned int i=0; i<sz; i++)
+        transferOrder2[i] = this->transferOrder[i];
+    for (unsigned int i=sz; i<size; i++)
+        transferOrder2[i] = 0;
+    transferOrder_arraysize = size;
+    delete [] this->transferOrder;
+    this->transferOrder = transferOrder2;
+}
+
+unsigned int TMacPacket::getTransferOrderArraySize() const
+{
+    return transferOrder_arraysize;
+}
+
+int TMacPacket::getTransferOrder(unsigned int k) const
+{
+    if (k>=transferOrder_arraysize) throw omnetpp::cRuntimeError("Array of size %d indexed by %d", transferOrder_arraysize, k);
+    return this->transferOrder[k];
+}
+
+void TMacPacket::setTransferOrder(unsigned int k, int transferOrder)
+{
+    if (k>=transferOrder_arraysize) throw omnetpp::cRuntimeError("Array of size %d indexed by %d", transferOrder_arraysize, k);
+    this->transferOrder[k] = transferOrder;
+}
+
+void TMacPacket::setO_ACK_bufferSizeArraySize(unsigned int size)
+{
+    int *O_ACK_bufferSize2 = (size==0) ? nullptr : new int[size];
+    unsigned int sz = O_ACK_bufferSize_arraysize < size ? O_ACK_bufferSize_arraysize : size;
+    for (unsigned int i=0; i<sz; i++)
+        O_ACK_bufferSize2[i] = this->O_ACK_bufferSize[i];
+    for (unsigned int i=sz; i<size; i++)
+        O_ACK_bufferSize2[i] = 0;
+    O_ACK_bufferSize_arraysize = size;
+    delete [] this->O_ACK_bufferSize;
+    this->O_ACK_bufferSize = O_ACK_bufferSize2;
+}
+
+unsigned int TMacPacket::getO_ACK_bufferSizeArraySize() const
+{
+    return O_ACK_bufferSize_arraysize;
+}
+
+int TMacPacket::getO_ACK_bufferSize(unsigned int k) const
+{
+    if (k>=O_ACK_bufferSize_arraysize) throw omnetpp::cRuntimeError("Array of size %d indexed by %d", O_ACK_bufferSize_arraysize, k);
+    return this->O_ACK_bufferSize[k];
+}
+
+void TMacPacket::setO_ACK_bufferSize(unsigned int k, int O_ACK_bufferSize)
+{
+    if (k>=O_ACK_bufferSize_arraysize) throw omnetpp::cRuntimeError("Array of size %d indexed by %d", O_ACK_bufferSize_arraysize, k);
+    this->O_ACK_bufferSize[k] = O_ACK_bufferSize;
 }
 
 class TMacPacketDescriptor : public omnetpp::cClassDescriptor
@@ -330,7 +451,7 @@ const char *TMacPacketDescriptor::getProperty(const char *propertyname) const
 int TMacPacketDescriptor::getFieldCount() const
 {
     omnetpp::cClassDescriptor *basedesc = getBaseClassDescriptor();
-    return basedesc ? 4+basedesc->getFieldCount() : 4;
+    return basedesc ? 5+basedesc->getFieldCount() : 5;
 }
 
 unsigned int TMacPacketDescriptor::getFieldTypeFlags(int field) const
@@ -344,10 +465,11 @@ unsigned int TMacPacketDescriptor::getFieldTypeFlags(int field) const
     static unsigned int fieldTypeFlags[] = {
         FD_ISEDITABLE,
         FD_ISEDITABLE,
-        FD_ISEDITABLE,
-        FD_ISEDITABLE,
+        FD_ISARRAY | FD_ISEDITABLE,
+        FD_ISARRAY | FD_ISEDITABLE,
+        FD_ISARRAY | FD_ISEDITABLE,
     };
-    return (field>=0 && field<4) ? fieldTypeFlags[field] : 0;
+    return (field>=0 && field<5) ? fieldTypeFlags[field] : 0;
 }
 
 const char *TMacPacketDescriptor::getFieldName(int field) const
@@ -360,11 +482,12 @@ const char *TMacPacketDescriptor::getFieldName(int field) const
     }
     static const char *fieldNames[] = {
         "type",
-        "nav",
-        "sync",
-        "syncId",
+        "bufferSize",
+        "ackedNode",
+        "transferOrder",
+        "O_ACK_bufferSize",
     };
-    return (field>=0 && field<4) ? fieldNames[field] : nullptr;
+    return (field>=0 && field<5) ? fieldNames[field] : nullptr;
 }
 
 int TMacPacketDescriptor::findField(const char *fieldName) const
@@ -372,9 +495,10 @@ int TMacPacketDescriptor::findField(const char *fieldName) const
     omnetpp::cClassDescriptor *basedesc = getBaseClassDescriptor();
     int base = basedesc ? basedesc->getFieldCount() : 0;
     if (fieldName[0]=='t' && strcmp(fieldName, "type")==0) return base+0;
-    if (fieldName[0]=='n' && strcmp(fieldName, "nav")==0) return base+1;
-    if (fieldName[0]=='s' && strcmp(fieldName, "sync")==0) return base+2;
-    if (fieldName[0]=='s' && strcmp(fieldName, "syncId")==0) return base+3;
+    if (fieldName[0]=='b' && strcmp(fieldName, "bufferSize")==0) return base+1;
+    if (fieldName[0]=='a' && strcmp(fieldName, "ackedNode")==0) return base+2;
+    if (fieldName[0]=='t' && strcmp(fieldName, "transferOrder")==0) return base+3;
+    if (fieldName[0]=='O' && strcmp(fieldName, "O_ACK_bufferSize")==0) return base+4;
     return basedesc ? basedesc->findField(fieldName) : -1;
 }
 
@@ -388,11 +512,12 @@ const char *TMacPacketDescriptor::getFieldTypeString(int field) const
     }
     static const char *fieldTypeStrings[] = {
         "int",
-        "simtime_t",
-        "simtime_t",
+        "int",
+        "bool",
+        "int",
         "int",
     };
-    return (field>=0 && field<4) ? fieldTypeStrings[field] : nullptr;
+    return (field>=0 && field<5) ? fieldTypeStrings[field] : nullptr;
 }
 
 const char **TMacPacketDescriptor::getFieldPropertyNames(int field) const
@@ -438,6 +563,9 @@ int TMacPacketDescriptor::getFieldArraySize(void *object, int field) const
     }
     TMacPacket *pp = (TMacPacket *)object; (void)pp;
     switch (field) {
+        case 2: return pp->getAckedNodeArraySize();
+        case 3: return pp->getTransferOrderArraySize();
+        case 4: return pp->getO_ACK_bufferSizeArraySize();
         default: return 0;
     }
 }
@@ -453,9 +581,10 @@ std::string TMacPacketDescriptor::getFieldValueAsString(void *object, int field,
     TMacPacket *pp = (TMacPacket *)object; (void)pp;
     switch (field) {
         case 0: return enum2string(pp->getType(), "TmacPacket_type");
-        case 1: return simtime2string(pp->getNav());
-        case 2: return simtime2string(pp->getSync());
-        case 3: return long2string(pp->getSyncId());
+        case 1: return long2string(pp->getBufferSize());
+        case 2: return bool2string(pp->getAckedNode(i));
+        case 3: return long2string(pp->getTransferOrder(i));
+        case 4: return long2string(pp->getO_ACK_bufferSize(i));
         default: return "";
     }
 }
@@ -471,9 +600,10 @@ bool TMacPacketDescriptor::setFieldValueAsString(void *object, int field, int i,
     TMacPacket *pp = (TMacPacket *)object; (void)pp;
     switch (field) {
         case 0: pp->setType((TmacPacket_type)string2enum(value, "TmacPacket_type")); return true;
-        case 1: pp->setNav(string2simtime(value)); return true;
-        case 2: pp->setSync(string2simtime(value)); return true;
-        case 3: pp->setSyncId(string2long(value)); return true;
+        case 1: pp->setBufferSize(string2long(value)); return true;
+        case 2: pp->setAckedNode(i,string2bool(value)); return true;
+        case 3: pp->setTransferOrder(i,string2long(value)); return true;
+        case 4: pp->setO_ACK_bufferSize(i,string2long(value)); return true;
         default: return false;
     }
 }
