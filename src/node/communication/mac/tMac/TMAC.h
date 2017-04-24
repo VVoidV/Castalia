@@ -57,12 +57,13 @@ enum TMacTimers {
                         // if more than one secondary schedule is present
     BACKOFF_BEFORE_ACK=14,
     WAIT_ACK_TIMEOUT_AGAIN=15,
+    WAIT_DATA_TIMEOUT_AFTER_SACK=17
 };
 
 class ThroughputTest;
 class TMAC: public VirtualMac {
 public:
-    bool isAckReceived[10];
+    std::vector<bool> isAckReceived;
     std::vector<int> ackList;
     std::vector<pair<int,int>> id_buffer;
     double receive_beacon;
@@ -162,11 +163,11 @@ public:
     void attemptTx();
     void setMacState(int newState, const char *descr = NULL);
     void sendData();
-//    void sendBeacon();
+    void sendBeacon();
     void sendAck();
-//    void sendGack();
- //   void sendOack();
- //   void sendSack();
+    void sendGack();
+    void sendOack();
+    void sendSack();
     void checkTxBuffer();
     void popTxBuffer();
     void initiateCSMACA();

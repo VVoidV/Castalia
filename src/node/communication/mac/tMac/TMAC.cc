@@ -42,6 +42,8 @@ void TMAC::startup()
     currentFrameStart = 0;
     CW = 0;
     numTxRetries = 0;
+    isAckReceived.resize(10);//bug
+    fill(isAckReceived.begin(),isAckReceived.end(),false);
     //Initialise state descriptions used in debug output
     if (printStateTransitions) {
         stateDescr[100] = "MAC_STATE_SETUP";
@@ -88,13 +90,14 @@ void TMAC::startup()
     sentOacks = 0;
     sentBeacons = 0;
 
-    isAckReceived[9] = { false };
+    //isAckReceived[9] = { false };
 
-    macState = MAC_STATE_SETUP;
+
     if (self == 0) {
         isSink = true;
         setTimer(START_LISTENING, 0.5);
         startTime[self] = getClock();
+
     }
     else
     {
@@ -102,6 +105,9 @@ void TMAC::startup()
         setTimer(START_LISTENING, 0.5);
         startTime[self] = getClock();
     }
+    macState = MAC_STATE_SLEEP;
+    WATCH(macState);
+    WATCH(macBufferSize);
 }
 
 void TMAC::timerFiredCallback(int timer)
@@ -125,8 +131,8 @@ void TMAC::timerFiredCallback(int timer)
                 setMacState(MAC_CARRIER_SENSE_FOR_TX_BEACON, "sink sends beacon again or goes to sleep");
                 setTimer(PERFORM_CCA, phyDelayForValidCS);
             }
-            else
-            {
+           else
+           {
                 setMacState(MAC_CARRIER_SENSE_FOR_TX_GACK, "sink prepares to send a gack");
                 setTimer(PERFORM_CCA, phyDelayForValidCS);
             }
@@ -137,6 +143,15 @@ void TMAC::timerFiredCallback(int timer)
             break;
         case WAIT_DATA_TIMEOUT:
             setMacState(MAC_CARRIER_SENSE_FOR_TX_OACK, "sink sends oack again or goes to sleep");
+            setTimer(PERFORM_CCA, phyDelayForValidCS);
+            break;
+        case WAIT_DATA_TIMEOUT_AFTER_SACK:
+            //no more data income
+            ackList.clear();
+            id_buffer.clear();
+            fill(isAckReceived.begin(),isAckReceived.end(),false);
+            setMacState(MAC_CARRIER_SENSE_FOR_TX_BEACON, "finish receiving data,resends a beacon");
+            toRadioLayer(createRadioCommand(SET_STATE, TX));
             setTimer(PERFORM_CCA, phyDelayForValidCS);
             break;
         case PERFORM_CCA:
@@ -152,176 +167,88 @@ void TMAC::timerFiredCallback(int timer)
                 trace() << "WARNING";
                 break;
             }
-            if (radioModule->isChannelClear() == CLEAR)
-            {
-                switch (macState)
-                {
-                case MAC_CARRIER_SENSE_FOR_TX_BEACON:
-#pragma region MAC_CARRIER_SENSE_FOR_TX_BEACON
-                    setMacState(MAC_STATE_IN_TX_BEACON, "sink send beacon");
-                    trace() << "Channel Clear, MAC_STATE_TX_BEACON, sending beacon";
-                    if (sentBeacons < maxBeacons)
-                    {
-                        sentBeacons++;
-                        TMacPacket *beaconPacket = new TMacPacket("BEACON message", MAC_LAYER_PACKET);
-                        beaconPacket->setSource(SELF_MAC_ADDRESS);
-                        beaconPacket->setDestination(BROADCAST_MAC_ADDRESS);
-                        beaconPacket->setType(BEACON_TMAC_PACKET);
-                        beaconPacket->setByteLength(beaconPacketSize);
-                        toRadioLayer(beaconPacket);
-                        toRadioLayer(createRadioCommand(SET_STATE, TX));
-                        trace() << "sink sends beacon successfully";
-
-                        setMacState(MAC_STATE_WAIT_FOR_ACK_BEACON, "after sending beacon packet");
-                        setTimer(WAIT_ACK_TIMEOUT, waitTimeout);//这么长时间后没有收到ack
-                        beaconPacket = NULL;
-                        break;
-                        // lastbeacon=getClock();
-                    }
-                    else
-                    {
-                        setMacState(MAC_STATE_SLEEP);
-                        sentBeacons=0;
-                        toRadioLayer(createRadioCommand(SET_STATE, SLEEP));
-                        setTimer(START_LISTENING, sleepInterval);
-                    }
-                    break;
-#pragma endregion
-                case MAC_CARRIER_SENSE_FOR_TX_GACK:
-#pragma region MAC_CARRIER_SENSE_FOR_TX_GACK
-                    setMacState(MAC_STATE_IN_TX_GACK, "sink sends gack");
-                    trace() << "Channel Clear, MAC_STATE_TX_GACK, sending ";
-                    if (sentGacks < maxGacks)
-                    {
-                        //                            if(revAck<=0)
-                        //                            {
-                        sentGacks++;
-                        TMacPacket *gackPacket = new TMacPacket("GACK message", MAC_LAYER_PACKET);
-                        gackPacket->setSource(SELF_MAC_ADDRESS);
-                        gackPacket->setDestination(BROADCAST_MAC_ADDRESS);
-                        gackPacket->setType(GACK_TMAC_PACKET);
-                        gackPacket->setByteLength(gackPacketSize);
-                        ///////
-                        gackPacket->setAckedNodeArraySize(10);
-                        for(int i=0;i<10;i++)
-                        {//need fix
-
-                            gackPacket->setAckedNode(i,isAckReceived[i]);
-
-                        }
-
-                       // gackPacket->setAckList(ackList);
-
-                        toRadioLayer(gackPacket);
-                        toRadioLayer(createRadioCommand(SET_STATE, TX));
-
-                        setMacState(MAC_STATE_WAIT_FOR_ACK_GACK, "after sending a gack packet");
-                        setTimer(WAIT_ACK_TIMEOUT_AGAIN, TX_TIME(11) + waitTimeout);
-                        gackPacket = NULL;
-                    }
-                    else
-                    {
-                        setMacState(MAC_CARRIER_SENSE_FOR_TX_OACK, "after sending a gack packet");
-                        setTimer(PERFORM_CCA, phyDelayForValidCS);
-                    }
-
-                    break;
-
-#pragma endregion MAC_CARRIER_SENSE_FOR_TX_GACK
-                case MAC_CARRIER_SENSE_FOR_TX_OACK:
-#pragma region MAC_CARRIER_SENSE_FOR_TX_OACK
-                    setMacState(MAC_STATE_IN_TX_OACK, "sink sends an oack");
-                    trace() << "Channel Clear, MAC_STATE_TX_OACK, sending ";
-                    if (sentOacks < maxOacks)
-                    {
-                        sentOacks++;
-                        TMacPacket *oackPacket = new TMacPacket("OACK message", MAC_LAYER_PACKET);
-                        oackPacket->setSource(SELF_MAC_ADDRESS);
-                        oackPacket->setDestination(BROADCAST_MAC_ADDRESS);
-                        oackPacket->setType(OACK_TMAC_PACKET);
-                        oackPacket->setByteLength(oackPacketSize);
-                        //////////////////////////////////////////////
-                        oackPacket -> setTransferOrderArraySize(ackList.size());
-                        oackPacket ->setO_ACK_bufferSizeArraySize(ackList.size());
-                        for(int i=0; i<ackList.size(); i++)
-                        {
-                            oackPacket->setTransferOrder(i, ackList[i]);
-                            oackPacket->setO_ACK_bufferSize(i,id_buffer[i].second);
-                        }
-                        //oackPacket->setIdBuffer(id_buffer);
-
-                        toRadioLayer(oackPacket);
-                        toRadioLayer(createRadioCommand(SET_STATE, TX));
-                        oackPacket = NULL;
-
-                        setMacState(MAC_STATE_WAIT_FOR_DATA, "sent oack packet");
-                        setTimer(WAIT_DATA_TIMEOUT, TX_TIME(dataPacketSize) + waitTimeout);//发完gack，等ack的时间,没等到则重发gack
-                                                                                           //if no reply is received after this time interval,then transmission attemp is considered failed and attempt counter is decremented.
-                    }
-                    else {
-                        toRadioLayer(createRadioCommand(SET_STATE, SLEEP));
-                        setTimer(START_LISTENING, sleepInterval);
-                    }
-                    break;
-#pragma endregion MAC_CARRIER_SENSE_FOR_TX_OACK
-                case MAC_CARRIER_SENSE_FOR_TX_DATA:
-#pragma region MAC_CARRIER_SENSE_FOR_TX_DATA:
-                    //setMacState(MAC_STATE_IN_TX_DATA, "sensor sends data");
-                    //trace() << "Channel Clear, MAC_STATE_TX_DATA, sending ";
-                    //if (maxRetries) {
-                    //  sendData();
-                    //}
-                    trace() << "Sink 有数据要发送么？";
-                    break;
-#pragma endregion MAC_CARRIER_SENSE_FOR_TX_DATA:
-                case MAC_CARRIER_SENSE_BEFORE_SLEEP:
-                    setMacState(MAC_STATE_SLEEP, "sleep");
-                    setTimer(START_LISTENING, sleepInterval);
-                    break;
-                default:
-                    trace() << "WARNING:unexpected case occured! in radioModule->isChannelClear() == CLEAR SINK";
-                }
-            }
-            else if (radioModule->isChannelClear() == BUSY)
-            {
-                switch (macState)
-                {
-                case MAC_CARRIER_SENSE_FOR_TX_BEACON:
-                    setMacState(MAC_CARRIER_SENSE_FOR_TX_BEACON);
-                    setTimer(PERFORM_CCA, phyDelayForValidCS);
-                    break;
-                case MAC_CARRIER_SENSE_FOR_TX_GACK:
-                    setMacState(MAC_CARRIER_SENSE_FOR_TX_OACK);
-                    setTimer(PERFORM_CCA, phyDelayForValidCS);
-                    break;
-                case MAC_CARRIER_SENSE_FOR_TX_DATA:
-                    setMacState(MAC_CARRIER_SENSE_FOR_TX_DATA);
-                    setTimer(PERFORM_CCA, phyDelayForValidCS);
-                    break;
-                case MAC_CARRIER_SENSE_BEFORE_SLEEP:
-                    setMacState(MAC_CARRIER_SENSE_BEFORE_SLEEP);
-                    setTimer(PERFORM_CCA, phyDelayForValidCS);
-                    break;
-                default:
-                    trace() << "WARNING:unexpected case occured in radioModule->isChannelClear() == BUSY SINK";
-                        break;
-                }
-            }//else if (radioModule->isChannelClear() == BUSY)
-            else if (radioModule->isChannelClear() == CS_NOT_VALID_YET)
+            if (radioModule->isChannelClear()== CS_NOT_VALID_YET)
             {
                 setTimer(PERFORM_CCA, phyDelayForValidCS);
+                break;
             }
             else if (radioModule->isChannelClear() == CS_NOT_VALID)
             {
                 toRadioLayer(createRadioCommand(SET_STATE, RX));
                 setTimer(PERFORM_CCA, phyDelayForValidCS);
+                break;
             }
 
+            switch (macState)
+            {
+            case MAC_CARRIER_SENSE_FOR_TX_BEACON:
+                if (radioModule->isChannelClear() == CLEAR)
+                {
+                    setMacState(MAC_STATE_IN_TX_BEACON, "sink send beacon");
+                    trace() << "Channel Clear, MAC_STATE_TX_BEACON, sending beacon";
+                    sendBeacon();
+                }
+                else if (radioModule->isChannelClear() == BUSY)
+                {
+                    setMacState(MAC_CARRIER_SENSE_FOR_TX_BEACON);
+                    setTimer(PERFORM_CCA, phyDelayForValidCS);
+                }
+                break;
+            case MAC_CARRIER_SENSE_FOR_TX_GACK:
+                if (radioModule->isChannelClear() == CLEAR)
+                {
+                    setMacState(MAC_STATE_IN_TX_GACK, "sink sends gack");
+                    trace() << "Channel Clear, MAC_STATE_TX_GACK, sending ";
+                    sendGack();
+                }
+                else if (radioModule->isChannelClear() == BUSY)
+                {
+                    setMacState(MAC_CARRIER_SENSE_FOR_TX_GACK);
+                    setTimer(PERFORM_CCA, phyDelayForValidCS);
+                }
+                break;
+            case MAC_CARRIER_SENSE_FOR_TX_OACK:
+                if (radioModule->isChannelClear() == CLEAR)
+                {
+                    setMacState(MAC_STATE_IN_TX_OACK, "sink sends an oack");
+                    trace() << "Channel Clear, MAC_STATE_TX_OACK, sending ";
+                    sendOack();
+                }
+                else if (radioModule->isChannelClear() == BUSY)
+                {
+                    setMacState(MAC_CARRIER_SENSE_FOR_TX_OACK);
+                    setTimer(PERFORM_CCA, phyDelayForValidCS);
+                }
+                break;
+            case MAC_CARRIER_SENSE_FOR_TX_DATA:
+                //目前sink 没数据要传
+                break;
+            case MAC_CARRIER_SENSE_BEFORE_SLEEP:
+                if (radioModule->isChannelClear() == CLEAR)
+                {
+                    setMacState(MAC_STATE_SLEEP, "sleep");
+                    //这里无线电还没关
+                    setTimer(START_LISTENING, sleepInterval);
+                }
+                else if (radioModule->isChannelClear() == BUSY)
+                {
+                    setMacState(MAC_CARRIER_SENSE_BEFORE_SLEEP);
+                    setTimer(PERFORM_CCA, phyDelayForValidCS);
+                }
+                break;
+            default:
+                trace() << "WARNING:unexpected case occured! in PERFORM_CCA Switch MAC_STATE";
+            }
 #pragma endregion PERFORM_CCA
             break;
-        case TRANSMISSION_TIMEOUT:
-            trace() << "transmission timeout ";
-            break;
+            case TRANSMISSION_TIMEOUT:
+                //Sink finished sending SAck
+                if(macState==MAC_STATE_IN_TX_SACK)
+                {
+                    setTimer(WAIT_DATA_TIMEOUT_AFTER_SACK, TX_TIME(dataPacketSize + ackPacketSize ));
+
+                }
+                break;
         default:
             trace() << "WARNING:unexpected case occured in switch (timer) SINK";
 
@@ -334,14 +261,13 @@ void TMAC::timerFiredCallback(int timer)
         case START_SLEEPING:
             toRadioLayer(createRadioCommand(SET_STATE, SLEEP));
             setTimer(START_LISTENING, sleepInterval);
-            setMacState(MAC_STATE_SLEEP);
             break;
         case START_LISTENING:
             if (!TXBuffer.empty())
             {
                 toRadioLayer(createRadioCommand(SET_STATE, RX));
                 setMacState(MAC_STATE_WAIT_FOR_BEACON, "sensor wakes up");
-                setTimer(WAIT_BEACON_TIMEOUT, listenInterval);
+                //setTimer(WAIT_BEACON_TIMEOUT, listenInterval);
             }
             else
             {
@@ -357,32 +283,7 @@ void TMAC::timerFiredCallback(int timer)
         case BACKOFF_BEFORE_ACK:
             if (radioModule->isChannelClear() == CLEAR)
             {
-#pragma region AckBeacon
-                if ((sentAcks <= macMaxCSMABackoffs))
-                {
-                    sentAcks++;
-                    TMacPacket *ackPacket = new TMacPacket("ACK message", MAC_LAYER_PACKET);
-                    ackPacket->setSource(SELF_MAC_ADDRESS);
-                    ackPacket->setDestination(BROADCAST_MAC_ADDRESS);
-                    ackPacket->setType(ACK_TMAC_PACKET);
-                    ackPacket->setByteLength(ackPacketSize);
-                    ackPacket->setBufferSize(TXBuffer.size());
-
-                    toRadioLayer(ackPacket);
-                    toRadioLayer(createRadioCommand(SET_STATE, TX));
-                    ackPacket = NULL;
-                    trace() << self << " sends an ack at:" << getClock();
-                    setMacState(MAC_STATE_WAIT_FOR_GACK, "sensor sends ack");
-                    setTimer(WAIT_GACK_TIMEOUT, waitTimeout);
-                    break;
-                }
-                else
-                {
-                    setMacState(MAC_STATE_SLEEP, "sensor's ack arrives maxmum value");
-                    toRadioLayer(createRadioCommand(SET_STATE, SLEEP));
-                    setTimer(START_LISTENING, sleepInterval);
-                }
-#pragma endregion
+                sendAck();
             }
             else if (radioModule->isChannelClear() == BUSY)
             {
@@ -401,6 +302,11 @@ void TMAC::timerFiredCallback(int timer)
             toRadioLayer(createRadioCommand(SET_STATE, SLEEP));
             setTimer(START_LISTENING, sleepInterval);
             break;
+        case WAIT_SACK_TIMEOUT:
+            //packet lose
+            setMacState(MAC_CARRIER_SENSE_FOR_TX_DATA,"packet lost retransfer");
+            setTimer(PERFORM_CCA, phyDelayForValidCS);
+            break;
         case PERFORM_CCA:
             if (macState == MAC_STATE_SLEEP)
                 break;
@@ -413,6 +319,10 @@ void TMAC::timerFiredCallback(int timer)
                     trace() << "Channel Clear, MAC_STATE_TX_DATA, sending ";
                     if (maxRetries) {
                         sendData();
+                    }
+                    else
+                    {//drop current packet
+                        popTxBuffer();
                     }
                     break;
                 case MAC_CARRIER_SENSE_BEFORE_SLEEP:
@@ -480,7 +390,11 @@ void TMAC::sendData()
         popTxBuffer();
         //        setMacState(MAC_STATE_IN_TX_DATA, "sent DATA packet to BROADCAST address");
         //        setTimer(TRANSMISSION_TIMEOUT, txTime);
-        maxRetries--;
+
+    }
+    else
+    {
+        txRetries--;
         setMacState(MAC_STATE_WAIT_FOR_SACK, "sent DATA packet to UNICAST address");
         setTimer(WAIT_SACK_TIMEOUT, txTime + TX_TIME(11) + phyDelayForValidCS);
     }
@@ -491,10 +405,10 @@ void TMAC::fromNetworkLayer(cPacket * netPkt, int destination)
 {
     // Create a new MAC frame from the received packet and buffer it (if possible)
     TMacPacket *macPkt = new TMacPacket("TMAC data packet", MAC_LAYER_PACKET);
+    encapsulatePacket(macPkt, netPkt);
     macPkt->setType(DATA_TMAC_PACKET);
     macPkt->setSource(SELF_MAC_ADDRESS);
     macPkt->setDestination(destination);
-    encapsulatePacket(macPkt, netPkt);
     if (bufferPacket(macPkt)) { // this is causing problems
         if (TXBuffer.size() == 1)
             checkTxBuffer();
@@ -505,8 +419,9 @@ void TMAC::fromNetworkLayer(cPacket * netPkt, int destination)
         }
     }
     else {
-         cancelAndDelete(macPkt);
+         //cancelAndDelete(macPkt);
          //We could send a control message to upper layer to inform of full buffer
+        trace() << "WARNING  MAC buffer overflow";
     }
 }
 
@@ -542,7 +457,7 @@ void TMAC::fromRadioLayer(cPacket * pkt, double RSSI, double LQI)
 
     // first of all, check if the packet is to this node or not
     if (destination != SELF_MAC_ADDRESS && destination != BROADCAST_MAC_ADDRESS) {
-        setMacState(MAC_STATE_ACTIVE_SILENT, "overheard a packet");
+        //setMacState(MAC_STATE_ACTIVE_SILENT, "overheard a packet");
         return;
     }
 
@@ -651,7 +566,7 @@ void TMAC::fromRadioLayer(cPacket * pkt, double RSSI, double LQI)
             for (auto iter=temp.begin(); iter != temp.end(); ++iter)
             {
 
-                if (iter->first == source)
+                if (iter->first == self)
                 {
                     break;
                 }
@@ -679,10 +594,12 @@ void TMAC::fromRadioLayer(cPacket * pkt, double RSSI, double LQI)
             // If MAC was expecting this frame, clear the timeout
             if (macState == MAC_STATE_WAIT_FOR_DATA)
                 cancelTimer(WAIT_DATA_TIMEOUT);
+            cancelTimer(WAIT_DATA_TIMEOUT_AFTER_SACK);
 
             // Create and send an ACK frame (since this node is the destination for DATA frame)
             if (sackPacket)
                 cancelAndDelete(sackPacket);
+
             sackPacket = new TMacPacket("TMAC SACK packet", MAC_LAYER_PACKET);
             sackPacket->setSource(SELF_MAC_ADDRESS);
             sackPacket->setDestination(source);
@@ -701,7 +618,7 @@ void TMAC::fromRadioLayer(cPacket * pkt, double RSSI, double LQI)
 
             // create a timeout for this transmission - nothing is expected in reply
             // so MAC is only waiting for the RADIO to finish the packet transmission
-            setTimer(WAIT_DATA_TIMEOUT, TX_TIME(11 + 255) + phyDelayForValidCS);
+            setTimer(TRANSMISSION_TIMEOUT, TX_TIME(sackPacketSize) + phyDelayForValidCS);
         }
         // Forward the frame to upper layer first
 
@@ -710,22 +627,22 @@ void TMAC::fromRadioLayer(cPacket * pkt, double RSSI, double LQI)
 
                            // received ACK frame
     case SACK_TMAC_PACKET: {
-        if (macState == MAC_STATE_WAIT_FOR_SACK && source == txAddr) {
+        if (macState == MAC_STATE_WAIT_FOR_SACK && self == destination) {
             trace() << "Transmission successful to " << txAddr;
             cancelTimer(WAIT_SACK_TIMEOUT);
             popTxBuffer();
             if (TXBuffer.empty())
             {
                 setMacState(MAC_STATE_SLEEP, "DATA send over");
-                setTimer(START_SLEEPING, sleepInterval);
+                //setTimer(START_SLEEPING, sleepInterval);//bug
+                toRadioLayer(createRadioCommand(SET_STATE, SLEEP));
                 break;
             }
             else
             {
-                double txTime = TX_TIME(TXBuffer.front()->getByteLength());
+                //double txTime = TX_TIME(TXBuffer.front()->getByteLength());
                 setMacState(MAC_CARRIER_SENSE_FOR_TX_DATA, "send next data");
                 setTimer(PERFORM_CCA, 0);
-
             }
         }
         break;
@@ -769,4 +686,127 @@ void TMAC::popTxBuffer()
     cancelAndDelete(TXBuffer.front());
     TXBuffer.pop();
     checkTxBuffer();
+}
+//////////////////////////////////////////////////////////////////////////
+void TMAC::sendBeacon()
+{
+    if (sentBeacons < maxBeacons)
+    {
+        sentBeacons++;
+        TMacPacket *beaconPacket = new TMacPacket("BEACON message", MAC_LAYER_PACKET);
+        beaconPacket->setSource(SELF_MAC_ADDRESS);
+        beaconPacket->setDestination(BROADCAST_MAC_ADDRESS);
+        beaconPacket->setType(BEACON_TMAC_PACKET);
+        beaconPacket->setByteLength(beaconPacketSize);
+        toRadioLayer(beaconPacket);
+        toRadioLayer(createRadioCommand(SET_STATE, TX));
+        trace() << "sink sends beacon successfully";
+
+        setMacState(MAC_STATE_WAIT_FOR_ACK_BEACON, "after sending beacon packet");
+        setTimer(WAIT_ACK_TIMEOUT, waitTimeout);//这么长时间后没有收到ack
+        beaconPacket = NULL;
+        // lastbeacon=getClock();
+    }
+    else
+    {
+        setMacState(MAC_STATE_SLEEP);
+        sentBeacons = 0;
+        toRadioLayer(createRadioCommand(SET_STATE, SLEEP));
+        setTimer(START_LISTENING, sleepInterval);
+    }
+}
+void TMAC::sendGack()
+{
+    if (sentGacks < maxGacks)
+    {
+        sentGacks++;
+        TMacPacket *gackPacket = new TMacPacket("GACK message", MAC_LAYER_PACKET);
+        gackPacket->setSource(SELF_MAC_ADDRESS);
+        gackPacket->setDestination(BROADCAST_MAC_ADDRESS);
+        gackPacket->setType(GACK_TMAC_PACKET);
+        gackPacket->setByteLength(gackPacketSize);
+        ///////
+        gackPacket->setAckedNodeArraySize(10);
+        for (int i = 0; i < 10; i++)
+        {//need fix
+
+            gackPacket->setAckedNode(i, isAckReceived[i]);
+
+        }
+
+        // gackPacket->setAckList(ackList);
+
+        toRadioLayer(gackPacket);
+        toRadioLayer(createRadioCommand(SET_STATE, TX));
+
+        setMacState(MAC_STATE_WAIT_FOR_ACK_GACK, "after sending a gack packet");
+        setTimer(WAIT_ACK_TIMEOUT_AGAIN, TX_TIME(11) + waitTimeout);
+        gackPacket = NULL;
+    }
+    else
+    {
+        setMacState(MAC_CARRIER_SENSE_FOR_TX_OACK, "after sending a gack packet");
+        setTimer(PERFORM_CCA, phyDelayForValidCS);
+    }
+}
+void TMAC::sendOack()
+{
+    if (sentOacks < maxOacks)
+    {
+        sentOacks++;
+        TMacPacket *oackPacket = new TMacPacket("OACK message", MAC_LAYER_PACKET);
+        oackPacket->setSource(SELF_MAC_ADDRESS);
+        oackPacket->setDestination(BROADCAST_MAC_ADDRESS);
+        oackPacket->setType(OACK_TMAC_PACKET);
+        oackPacket->setByteLength(oackPacketSize);
+        //////////////////////////////////////////////
+        oackPacket->setTransferOrderArraySize(ackList.size());
+        oackPacket->setO_ACK_bufferSizeArraySize(ackList.size());
+        for (int i = 0; i < ackList.size(); i++)
+        {
+            oackPacket->setTransferOrder(i, ackList[i]);
+            oackPacket->setO_ACK_bufferSize(i, id_buffer[i].second);
+        }
+        //oackPacket->setIdBuffer(id_buffer);
+
+        toRadioLayer(oackPacket);
+        toRadioLayer(createRadioCommand(SET_STATE, TX));
+        oackPacket = NULL;
+
+        setMacState(MAC_STATE_WAIT_FOR_DATA, "sent oack packet");
+        setTimer(WAIT_DATA_TIMEOUT, TX_TIME(dataPacketSize) + waitTimeout);//发完gack，等ack的时间,没等到则重发gack
+                                                                           //if no reply is received after this time interval,then transmission attemp is considered failed and attempt counter is decremented.
+    }
+    else
+    {
+        toRadioLayer(createRadioCommand(SET_STATE, SLEEP));
+        setMacState(MAC_STATE_SLEEP);
+        setTimer(START_LISTENING, sleepInterval);
+    }
+}
+void TMAC::sendAck()
+{
+    if ((sentAcks <= macMaxCSMABackoffs))
+    {
+        sentAcks++;
+        TMacPacket *ackPacket = new TMacPacket("ACK message", MAC_LAYER_PACKET);
+        ackPacket->setSource(SELF_MAC_ADDRESS);
+        ackPacket->setDestination(BROADCAST_MAC_ADDRESS);
+        ackPacket->setType(ACK_TMAC_PACKET);
+        ackPacket->setByteLength(ackPacketSize);
+        ackPacket->setBufferSize(TXBuffer.size());
+
+        toRadioLayer(ackPacket);
+        toRadioLayer(createRadioCommand(SET_STATE, TX));
+        ackPacket = NULL;
+        trace() << self << " sends an ack at:" << getClock();
+        setMacState(MAC_STATE_WAIT_FOR_GACK, "sensor sends ack");
+        setTimer(WAIT_GACK_TIMEOUT, waitTimeout);
+    }
+    else
+    {
+        setMacState(MAC_STATE_SLEEP, "sensor's ack arrives maxmum value");
+        toRadioLayer(createRadioCommand(SET_STATE, SLEEP));
+        setTimer(START_LISTENING, sleepInterval);
+    }
 }
