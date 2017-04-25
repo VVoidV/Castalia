@@ -37,6 +37,7 @@ enum MacStates {
     MAC_BACKOFF_BEFORE_ACK=121,
     MAC_STATE_WAIT_FOR_ACK_BEACON=122,
     MAC_STATE_WAIT_FOR_ACK_GACK=123,
+    MAC_STATE_SBM = 124
 };
 
 enum TMacTimers {
@@ -57,7 +58,8 @@ enum TMacTimers {
                         // if more than one secondary schedule is present
     BACKOFF_BEFORE_ACK=14,
     WAIT_ACK_TIMEOUT_AGAIN=15,
-    WAIT_DATA_TIMEOUT_AFTER_SACK=17
+    WAIT_DATA_TIMEOUT_AFTER_SACK=17,
+    WAKE_UP_FROM_SBM = 18
 };
 
 class ThroughputTest;

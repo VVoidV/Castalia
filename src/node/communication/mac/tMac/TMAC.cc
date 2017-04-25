@@ -151,6 +151,9 @@ void TMAC::timerFiredCallback(int timer)
             id_buffer.clear();
             fill(isAckReceived.begin(),isAckReceived.end(),false);
             setMacState(MAC_CARRIER_SENSE_FOR_TX_BEACON, "finish receiving data,resends a beacon");
+            sentGacks =0;
+            sentOacks =0;
+//            sentBeacons =0;
             toRadioLayer(createRadioCommand(SET_STATE, TX));
             setTimer(PERFORM_CCA, phyDelayForValidCS);
             break;
@@ -271,6 +274,7 @@ void TMAC::timerFiredCallback(int timer)
             }
             else
             {
+                setMacState(MAC_STATE_SLEEP, "sensor go to sleep");
                 toRadioLayer(createRadioCommand(SET_STATE, SLEEP));
                 setTimer(START_LISTENING, sleepInterval);
             }
@@ -363,6 +367,11 @@ void TMAC::timerFiredCallback(int timer)
         case TRANSMISSION_TIMEOUT:
             trace() << "transmission timeout ";
             break;
+        case WAKE_UP_FROM_SBM:
+            setMacState(MAC_CARRIER_SENSE_FOR_TX_DATA, "send data");
+            std::cout<<"Node "<<self<<" wake up from SBM at "<<getClock()<<endl;
+            setTimer(PERFORM_CCA,phyDelayForValidCS);
+            break;
         default:
             trace() << "WARNING: unknown timer callback " << timer;
         }//switch
@@ -409,6 +418,7 @@ void TMAC::fromNetworkLayer(cPacket * netPkt, int destination)
     macPkt->setType(DATA_TMAC_PACKET);
     macPkt->setSource(SELF_MAC_ADDRESS);
     macPkt->setDestination(destination);
+    std::cout<<"Node "<< self <<" fromNetworkLayer buffer.size(): "<<TXBuffer.size()<<endl;
     if (bufferPacket(macPkt)) { // this is causing problems
         if (TXBuffer.size() == 1)
             checkTxBuffer();
@@ -573,11 +583,19 @@ void TMAC::fromRadioLayer(cPacket * pkt, double RSSI, double LQI)
                 cout << "id:" << iter->first << "buffer_size:" << iter->second << endl;
                 sum_size += iter->second;
             }
-
-            setMacState(MAC_CARRIER_SENSE_FOR_TX_DATA, "send data");
             trace() << self << " receives an ock at:" << getClock();
-            setTimer(PERFORM_CCA, (sum_size)*TX_TIME(dataPacketSize + ackPacketSize));
-
+            if(sum_size>0)
+            {//switch to SBM
+                std::cout<<"Node "<<self<<" switch to SBM for "
+                        <<(sum_size)*TX_TIME(dataPacketSize + ackPacketSize)<<" s"<<endl;
+                setMacState(MAC_STATE_SBM, "switch to SBM");
+                setTimer(WAKE_UP_FROM_SBM, (sum_size)*TX_TIME(dataPacketSize + ackPacketSize));
+            }
+            else
+            {//send packet now
+                setMacState(MAC_CARRIER_SENSE_FOR_TX_DATA, "send data");
+                setTimer(PERFORM_CCA, phyDelayForValidCS);
+            }
         }
         break;
     }
@@ -745,6 +763,7 @@ void TMAC::sendGack()
     }
     else
     {
+        sentGacks = 0;
         setMacState(MAC_CARRIER_SENSE_FOR_TX_OACK, "after sending a gack packet");
         setTimer(PERFORM_CCA, phyDelayForValidCS);
     }
@@ -779,6 +798,7 @@ void TMAC::sendOack()
     }
     else
     {
+        sentOacks = 0;
         toRadioLayer(createRadioCommand(SET_STATE, SLEEP));
         setMacState(MAC_STATE_SLEEP);
         setTimer(START_LISTENING, sleepInterval);
@@ -786,9 +806,9 @@ void TMAC::sendOack()
 }
 void TMAC::sendAck()
 {
-    if ((sentAcks <= macMaxCSMABackoffs))
-    {
-        sentAcks++;
+    //if ((sentAcks <= macMaxCSMABackoffs))
+    //{
+       // sentAcks++;
         TMacPacket *ackPacket = new TMacPacket("ACK message", MAC_LAYER_PACKET);
         ackPacket->setSource(SELF_MAC_ADDRESS);
         ackPacket->setDestination(BROADCAST_MAC_ADDRESS);
@@ -802,11 +822,11 @@ void TMAC::sendAck()
         trace() << self << " sends an ack at:" << getClock();
         setMacState(MAC_STATE_WAIT_FOR_GACK, "sensor sends ack");
         setTimer(WAIT_GACK_TIMEOUT, waitTimeout);
-    }
-    else
+    //}
+    /*else
     {
         setMacState(MAC_STATE_SLEEP, "sensor's ack arrives maxmum value");
         toRadioLayer(createRadioCommand(SET_STATE, SLEEP));
         setTimer(START_LISTENING, sleepInterval);
-    }
+    }*/
 }

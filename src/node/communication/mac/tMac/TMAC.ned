@@ -65,8 +65,8 @@ simple TMAC like castalia_3_2.src.node.communication.mac.iMac
     bool txAllPacketsInFreeChannel= default(false);
 
     double dutyCycle= default (0.1);
-    double listenInterval= default (500);
-    double sleepInterval= default (2100);
+    double listenInterval= default (60);
+    double sleepInterval= default (600);
 
 	bool isSink= default (false);
 
