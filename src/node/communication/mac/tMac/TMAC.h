@@ -148,7 +148,7 @@ public:
 
     simtime_t startTime[10];
 
-
+    int numNodes;
     /*--- TMAC packet pointers (sometimes packet is created not immediately before sending) ---*/
     TMacPacket *beaconPacket;
     TMacPacket *ackPacket;

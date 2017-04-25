@@ -13,7 +13,7 @@ Define_Module(TMAC);
 void TMAC::startup()
 {
     dutyCycle = par("dutyCycle");
-    startTime[10] = { 0.0 };
+    startTime[10] = { 0.0 };//no use
     listenInterval = ((double)par("listenInterval")) / 1000.0;  // convert msecs to secs
     sleepInterval = ((double)par("sleepInterval")) / 1000.0;
     printStateTransitions = par("printStateTransitions");
@@ -42,8 +42,8 @@ void TMAC::startup()
     currentFrameStart = 0;
     CW = 0;
     numTxRetries = 0;
-    isAckReceived.resize(10);//bug
-    fill(isAckReceived.begin(),isAckReceived.end(),false);
+//    isAckReceived.resize(10);//bug
+//    fill(isAckReceived.begin(),isAckReceived.end(),false);
     //Initialise state descriptions used in debug output
     if (printStateTransitions) {
         stateDescr[100] = "MAC_STATE_SETUP";
@@ -89,9 +89,6 @@ void TMAC::startup()
     sentGacks = 0;
     sentOacks = 0;
     sentBeacons = 0;
-
-    //isAckReceived[9] = { false };
-
 
     if (self == 0) {
         isSink = true;
@@ -491,10 +488,12 @@ void TMAC::fromRadioLayer(cPacket * pkt, double RSSI, double LQI)
         {
             cout << "ackList: " << ackList[i] << endl;
         }
-        if (macState == MAC_STATE_WAIT_FOR_ACK_BEACON) {
-            revAck = 0;
+        if (macState == MAC_STATE_WAIT_FOR_ACK_BEACON)
+        {
+            /*revAck = 0;
             for (int i = 0; i < ackList.size(); i++)
             {
+
                 if (ackList[i] == source)
                 {
                     isAckReceived[source] = true;
@@ -508,25 +507,30 @@ void TMAC::fromRadioLayer(cPacket * pkt, double RSSI, double LQI)
                 id_buffer.push_back(make_pair(source, size));
                 //id_buffer[source]=macPkt->getBufferSize();//sink 收到source的ack包，把source的buffer大小存到buffersize中。
                 isAckReceived[source] = true;
+            }*/
+            //isAckReceived is not big enough
+            if(isAckReceived.size() < source)
+                isAckReceived.resize(source + 1);
+
+            if(false == isAckReceived[source])
+            {
+                ackList.push_back(source);//不存在
+                id_buffer.push_back( make_pair(source, macPkt->getBufferSize()) );
+                isAckReceived[source] = true;
             }
         }
+
         if (macState == MAC_STATE_WAIT_FOR_ACK_GACK)
         {
             cancelTimer(WAIT_ACK_TIMEOUT_AGAIN);
-            for (int i = 0; i < ackList.size(); i++)
-            {
-                if (ackList[i] == source)
-                {
-                    isAckReceived[source] = true;
-                    break;
-                }
-            }
-            if (isAckReceived[source] == false)
+            //isAckReceived is not big enough
+            if(isAckReceived.size() < source)
+                isAckReceived.resize(source + 1);
+
+            if(false == isAckReceived[source])
             {
                 ackList.push_back(source);//不存在
-                int size = macPkt->getBufferSize();
-                id_buffer.push_back(make_pair(source, size));
-                //id_buffer[source]=macPkt->getBufferSize();//sink 收到source的ack包，把source的buffer大小存到buffersize中。
+                id_buffer.push_back( make_pair(source, macPkt->getBufferSize()) );
                 isAckReceived[source] = true;
             }
             setMacState(MAC_CARRIER_SENSE_FOR_TX_GACK, "send next GACK packet");
@@ -744,8 +748,8 @@ void TMAC::sendGack()
         gackPacket->setType(GACK_TMAC_PACKET);
         gackPacket->setByteLength(gackPacketSize);
         ///////
-        gackPacket->setAckedNodeArraySize(10);
-        for (int i = 0; i < 10; i++)
+        gackPacket->setAckedNodeArraySize(isAckReceived.size());
+        for (int i = 0; i < isAckReceived.size(); i++)
         {//need fix
 
             gackPacket->setAckedNode(i, isAckReceived[i]);
